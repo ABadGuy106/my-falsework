@@ -407,3 +407,22 @@ public class DataInitializer implements ApplicationRunner {
 - [Spring Security 官方文档](https://docs.spring.io/spring-security/reference/)
 - [JWT 官方网站](https://jwt.io/)
 - [JJWT 库文档](https://github.com/jwtk/jjwt)
+
+问题原因
+
+你的系统中有两种 token 机制：
+- 普通用户登录/注册：使用 TokenService 生成 UUID 格式的 token（存储在 Redis）
+- 客户端密钥登录：使用 JwtTokenProvider 生成 JWT 格式的 token（格式：xxx.yyy.zzz）
+
+但原来的 JwtAuthenticationFilter 只能处理 JWT 格式的 token，当收到 UUID token 时会尝试用 JWT 方式 解析，导致报错"Found: 0"（UUID 字符串中没有点号） 。
+
+修复方案
+
+修改了 JwtAuthenticationFilter（src/main/java/net/bbq/falsework/security/JwtAuthenticationFilter.java:36-77），现在它会：
+
+1. 优先使用 TokenService 验证 UUID token（普通用户登录）
+2. 如果 UUID token 验证失败，再使用 JwtTokenProvider 验证 JWT token（客户端登录）
+
+这样两种 token 格式都能正常工作了，并且不会出现 解析错误。
+
+

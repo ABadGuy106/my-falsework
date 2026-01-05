@@ -24,6 +24,7 @@ import java.util.Collections;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
+    private final net.bbq.falsework.service.TokenService tokenService;
 
     @Override
     protected void doFilterInternal(
@@ -32,23 +33,41 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain) throws ServletException, IOException {
 
         try {
-            String jwt = getJwtFromRequest(request);
+            String token = getJwtFromRequest(request);
 
-            if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                Long userId = tokenProvider.getUserIdFromToken(jwt);
-                String username = tokenProvider.getUsernameFromToken(jwt);
-                String role = tokenProvider.getRoleFromToken(jwt);
+            if (StringUtils.hasText(token)) {
+                // 首先尝试使用 TokenService 验证 UUID token
+                net.bbq.falsework.dto.TokenUser tokenUser = tokenService.getUserByToken(token);
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                userId,
-                                null,
-                                Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                        );
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (tokenUser != null) {
+                    // UUID token 验证成功
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    tokenUser.getUserId(),
+                                    null,
+                                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + tokenUser.getRole()))
+                            );
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
 
-                log.debug("Set Authentication for user: {}, role: {}", username, role);
+                    log.debug("Set Authentication for user: {}, role: {} (UUID token)", tokenUser.getUsername(), tokenUser.getRole());
+                } else if (tokenProvider.validateToken(token)) {
+                    // 尝试使用 JwtTokenProvider 验证 JWT token
+                    Long userId = tokenProvider.getUserIdFromToken(token);
+                    String username = tokenProvider.getUsernameFromToken(token);
+                    String role = tokenProvider.getRoleFromToken(token);
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(
+                                    userId,
+                                    null,
+                                    Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
+                            );
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+
+                    log.debug("Set Authentication for user: {}, role: {} (JWT token)", username, role);
+                }
             }
         } catch (Exception ex) {
             log.error("Could not set user authentication in security context", ex);
